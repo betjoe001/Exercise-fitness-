@@ -1,0 +1,179 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fitness App for All Ages</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="container mx-auto p-4">
+    <!-- Header -->
+    <header class="text-center py-6">
+      <h1 class="text-4xl font-bold text-blue-600">Fitness for All</h1>
+      <p class="text-lg text-gray-600">Workouts for Kids and Adults</p>
+    </header>
+
+    <!-- Age Group Selection -->
+    <section id="age-selection" class="text-center mb-8">
+      <h2 class="text-2xl font-semibold mb-4">Choose Your Age Group</h2>
+      <div class="flex justify-center space-x-4">
+        <button id="kids-btn" class="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600">Kids (5-12)</button>
+        <button id="adults-btn" class="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600">Adults (13+)</button>
+      </div>
+    </section>
+
+    <!-- Workout Plans -->
+    <section id="workout-plans" class="hidden">
+      <h2 id="plan-title" class="text-2xl font-semibold text-center mb-4"></h2>
+      <div id="plans-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <!-- Progress Tracker -->
+    <section id="progress-tracker" class="hidden mt-8">
+      <h2 class="text-2xl font-semibold text-center mb-4">Track Your Progress</h2>
+      <div class="bg-white p-6 rounded-lg shadow-md">
+        <form id="progress-form" onsubmit="event.preventDefault(); saveProgress();">
+          <div class="mb-4">
+            <label for="date" class="block text-gray-700">Date</label>
+            <input type="date" id="date" class="w-full p-2 border rounded" required>
+          </div>
+          <div class="mb-4">
+            <label for="workout" class="block text-gray-700">Workout Completed</label>
+            <input type="text" id="workout" class="w-full p-2 border rounded" required>
+          </div>
+          <div class="mb-4">
+            <label for="notes" class="block text-gray-700">Notes</label>
+            <textarea id="notes" class="w-full p-2 border rounded"></textarea>
+          </div>
+          <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Save Progress</button>
+        </form>
+        <div id="progress-list" class="mt-4"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Workout plans data
+    const workouts = {
+      kids: [
+        { name: "Jumping Jacks", description: "30 seconds of fun jumping!", duration: "5 mins" },
+        { name: "Animal Walks", description: "Mimic animals like bears or crabs.", duration: "10 mins" },
+        { name: "Obstacle Course", description: "Set up a fun course to navigate.", duration: "15 mins" }
+      ],
+      adults: [
+        { name: "Push-Ups", description: "Strengthen your upper body.", duration: "10 mins" },
+        { name: "Squats", description: "Build leg and core strength.", duration: "10 mins" },
+        { name: "Plank", description: "Core stability exercise.", duration: "5 mins" }
+      ]
+    };
+
+    // DOM elements
+    const ageSelection = document.getElementById('age-selection');
+    const workoutPlans = document.getElementById('workout-plans');
+    const plansContainer = document.getElementById('plans-container');
+    const planTitle = document.getElementById('plan-title');
+    const progressTracker = document.getElementById('progress-tracker');
+    const progressList = document.getElementById('progress-list');
+    const kidsBtn = document.getElementById('kids-btn');
+    const adultsBtn = document.getElementById('adults-btn');
+
+    // Progress storage
+    let progressData = JSON.parse(localStorage.getItem('fitnessProgress')) || [];
+
+    // Event listeners for age group buttons
+    kidsBtn.addEventListener('click', () => showWorkouts('kids', 'Kids Workout Plans'));
+    adultsBtn.addEventListener('click', () => showWorkouts('adults', 'Adults Workout Plans'));
+
+    // Display workout plans
+    function showWorkouts(ageGroup, title) {
+      ageSelection.classList.add('hidden');
+      workoutPlans.classList.remove('hidden');
+      progressTracker.classList.remove('hidden');
+      planTitle.textContent = title;
+
+      plansContainer.innerHTML = '';
+      workouts[ageGroup].forEach(workout => {
+        const card = document.createElement('div');
+        card.className = 'bg-white p-4 rounded-lg shadow-md';
+        card.innerHTML = `
+          <h3 class="text-xl font-bold">${workout.name}</h3>
+          <p class="text-gray-600">${workout.description}</p>
+          <p class="text-gray-500">Duration: ${workout.duration}</p>
+        `;
+        plansContainer.appendChild(card);
+      });
+
+      displayProgress();
+    }
+
+    // Save progress
+    function saveProgress() {
+      const date = document.getElementById('date').value;
+      const workout = document.getElementById('workout').value;
+      const notes = document.getElementById('notes').value;
+
+      if (date && workout) {
+        progressData.push({ date, workout, notes });
+        localStorage.setItem('fitnessProgress', JSON.stringify(progressData));
+        displayProgress();
+        document.getElementById('progress-form').reset();
+      }
+    }
+
+    // Display progress
+    function displayProgress() {
+      progressList.innerHTML = '';
+      progressData.forEach(entry => {
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'border-b py-2';
+        entryDiv.innerHTML = `
+          <p><strong>Date:</strong> ${entry.date}</p>
+          <p><strong>Workout:</strong> ${entry.workout}</p>
+          <p><strong>Notes:</strong> ${entry.notes || 'None'}</p>
+        `;
+        progressList.appendChild(entryDiv);
+      });
+    }
+  </script>
+</body>
+</html>
